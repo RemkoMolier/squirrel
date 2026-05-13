@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/RemkoMolier/squirrel/internal/imageref"
 )
@@ -98,8 +99,8 @@ const (
 // Decision is the outcome of resolving one container image. The
 // webhook turns each Decision into either a JSON patch (when Action is
 // Rewrite and RewrittenImage differs from the input) or a no-op
-// (otherwise), plus an entry in the squirrel.molier.dev/rewrites
-// annotation.
+// (otherwise), plus a per-container
+// original-image.squirrel.molier.dev/<containerName> annotation.
 type Decision struct {
 	// OriginalImage is the parsed input. Always set on a successful
 	// Resolve call; zero-valued when the input failed to parse and
@@ -121,6 +122,20 @@ type Decision struct {
 	// Source identifies the rule that produced the decision. Zero
 	// value when Action is "".
 	Source RuleSource
+
+	// InvalidRenders lists rewrite rules that matched the input image
+	// but whose target rendered invalidly (empty registry, empty
+	// repository after subform, no SelectTag candidate produced a
+	// valid tag, or the assembled reference failed reparse). The
+	// resolver treats such rules as non-applicable for the container
+	// and continues to lower-priority rules; the webhook reads this
+	// slice to emit one squirrel_invalid_target_renders_total
+	// observation per matching-but-broken rule. The reconciler's
+	// reconcile-time validation should have rejected most of these
+	// upstream; entries here are the input-dependent residue (e.g.
+	// `{repository:owner}` on a single-segment repo) that only
+	// surfaces at admission time.
+	InvalidRenders []RuleSource
 }
 
 // Resolve runs the two-phase resolution over rules for the given input
@@ -132,19 +147,54 @@ type Decision struct {
 //
 // The function is pure: same inputs always produce the same Decision.
 // The webhook is free to invoke it concurrently across containers in a
-// single Pod admission.
+// single Pod admission. For pods with multiple containers, callers can
+// avoid resorting rules per container by calling Prepare once and
+// passing the result to ResolvePrepared - Resolve itself does the
+// sorting on every call.
 func Resolve(image string, rules []CompiledRule) (Decision, error) {
+	return ResolvePrepared(image, Prepare(rules))
+}
+
+// PreparedRules carries the two pre-sorted rule slices Resolve needs.
+// Callers that resolve a single image use Resolve directly; callers
+// that resolve a batch (e.g. a Pod's containers under a single
+// admission) build a PreparedRules once and pass it to ResolvePrepared
+// per image, amortising the sort cost over the batch.
+type PreparedRules struct {
+	skips    []CompiledRule
+	rewrites []CompiledRule
+}
+
+// Prepare sorts rules into the two ordered slices Resolve consults.
+// Sorting is the only state Resolve carries between containers in a
+// Pod admission; running Prepare once per admission and reusing the
+// result keeps admission latency O(n log n) per admission rather than
+// O(n log n) per container as policy count grows.
+func Prepare(rules []CompiledRule) PreparedRules {
+	return PreparedRules{
+		skips:    skipRulesSorted(rules),
+		rewrites: rewriteRulesSorted(rules),
+	}
+}
+
+// ResolvePrepared runs the two-phase resolution against a
+// pre-sorted PreparedRules. Identical semantics to Resolve; only the
+// per-call sort is elided.
+func ResolvePrepared(image string, prepared PreparedRules) (Decision, error) {
 	parsed, err := imageref.Parse(image)
 	if err != nil {
 		return Decision{}, fmt.Errorf("engine: %w", err)
 	}
 
-	// Phase 1: skip rules. Walk in any order; the first match
-	// terminates resolution with the image unchanged.
-	for _, r := range rules {
-		if r.Action != ActionSkip {
-			continue
-		}
+	// Phase 1: skip rules, sorted by the same Scope > Name > RuleIndex
+	// tie-breaker as the rewrite phase (skip rules ignore priority).
+	// The ordering is what makes the Decision.Source field deterministic
+	// when multiple skip rules match the same image: without it the
+	// webhook (Phase 5) would record arbitrary sources across
+	// admissions, producing inconsistent
+	// `original-image.squirrel.molier.dev/<containerName>` annotation
+	// content and noisy diffs.
+	for _, r := range prepared.skips {
 		if r.Match.Matches(parsed) {
 			return Decision{
 				OriginalImage:  parsed,
@@ -155,21 +205,28 @@ func Resolve(image string, rules []CompiledRule) (Decision, error) {
 		}
 	}
 
-	// Phase 2: rewrite rules. Walk the rewrite rules in slice order
-	// (priority sorting + tie-breakers will be folded in via a
-	// follow-up commit in this phase). The first rule whose match
-	// expression matches the input and whose target renders to a valid
-	// OCI image reference wins; rules that match but render
-	// invalidly are non-applicable per the design and we move on.
-	for _, r := range rules {
-		if r.Action != ActionRewrite {
-			continue
-		}
+	// Phase 2: rewrite rules sorted by effective priority descending
+	// with the design's tie-breaker chain (namespaced beats cluster,
+	// then policy name ascending, then rule index ascending). The
+	// first rule whose match expression matches and whose target
+	// renders to a valid OCI image reference wins; rules that match
+	// but render invalidly fall through per "rule is non-applicable
+	// for this container".
+	rewrites := prepared.rewrites
+	var invalidRenders []RuleSource
+	for _, r := range rewrites {
 		if !r.Match.Matches(parsed) {
 			continue
 		}
 		rendered, ok := renderTarget(r.Target, parsed)
 		if !ok {
+			// Rule matched but its target rendered to an invalid
+			// OCI reference. Record the source so the webhook can
+			// surface this as squirrel_invalid_target_renders_total
+			// and fall through to the next-priority rule (the
+			// design's "rule is non-applicable for this container"
+			// path).
+			invalidRenders = append(invalidRenders, r.Source)
 			continue
 		}
 		return Decision{
@@ -177,12 +234,14 @@ func Resolve(image string, rules []CompiledRule) (Decision, error) {
 			RewrittenImage: rendered,
 			Action:         ActionRewrite,
 			Source:         r.Source,
+			InvalidRenders: invalidRenders,
 		}, nil
 	}
 
 	return Decision{
 		OriginalImage:  parsed,
 		RewrittenImage: canonicalForm(parsed),
+		InvalidRenders: invalidRenders,
 	}, nil
 }
 
@@ -242,6 +301,73 @@ func renderTarget(target Target, original imageref.Image) (string, bool) {
 		return "", false
 	}
 	return canonicalForm(parsed), true
+}
+
+// skipRulesSorted returns the skip-action subset of rules sorted by
+// the design's tie-breaker chain (minus priority, which is ignored on
+// skip rules):
+//
+//  1. Source.Scope ascending so namespaced beats cluster.
+//  2. Source.Name ascending lexicographically.
+//  3. Source.RuleIndex ascending.
+//
+// The function does not mutate the input slice. Returning a sorted
+// view rather than walking in slice order makes the Decision.Source
+// recorded on a skip outcome deterministic across admissions even when
+// the webhook builds the rule slice from map iteration.
+func skipRulesSorted(rules []CompiledRule) []CompiledRule {
+	out := make([]CompiledRule, 0, len(rules))
+	for _, r := range rules {
+		if r.Action == ActionSkip {
+			out = append(out, r)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		ra, rb := out[a], out[b]
+		if ra.Source.Scope != rb.Source.Scope {
+			return ra.Source.Scope == ScopeNamespaced
+		}
+		if ra.Source.Name != rb.Source.Name {
+			return ra.Source.Name < rb.Source.Name
+		}
+		return ra.Source.RuleIndex < rb.Source.RuleIndex
+	})
+	return out
+}
+
+// rewriteRulesSorted returns the rewrite-action subset of rules sorted
+// by the design's order:
+//
+//  1. Effective priority, descending.
+//  2. Source.Scope ascending so namespaced beats cluster.
+//  3. Source.Name ascending lexicographically.
+//  4. Source.RuleIndex ascending.
+//
+// The function does not mutate the input slice; the returned slice
+// references the same CompiledRule values (no deep copy) and is safe
+// to walk without further allocations per rule.
+func rewriteRulesSorted(rules []CompiledRule) []CompiledRule {
+	out := make([]CompiledRule, 0, len(rules))
+	for _, r := range rules {
+		if r.Action == ActionRewrite {
+			out = append(out, r)
+		}
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		ra, rb := out[a], out[b]
+		if ra.Priority != rb.Priority {
+			return ra.Priority > rb.Priority
+		}
+		// Namespaced beats cluster at equal priority.
+		if ra.Source.Scope != rb.Source.Scope {
+			return ra.Source.Scope == ScopeNamespaced
+		}
+		if ra.Source.Name != rb.Source.Name {
+			return ra.Source.Name < rb.Source.Name
+		}
+		return ra.Source.RuleIndex < rb.Source.RuleIndex
+	})
+	return out
 }
 
 // canonicalForm returns the canonical string representation of an

@@ -8,8 +8,6 @@ import (
 )
 
 // rewriteRule is a small constructor for table-driven rewrite tests.
-// The priority parameter is reintroduced when the priority-ordering
-// iteration in this phase lands.
 func rewriteRule(match imageref.Match, target engine.Target, source engine.RuleSource) engine.CompiledRule {
 	return engine.CompiledRule{
 		Match:  match,
@@ -17,6 +15,14 @@ func rewriteRule(match imageref.Match, target engine.Target, source engine.RuleS
 		Target: target,
 		Source: source,
 	}
+}
+
+// rewriteRuleP is the priority-carrying variant used by the rewrite
+// ordering tests.
+func rewriteRuleP(match imageref.Match, target engine.Target, priority int32, source engine.RuleSource) engine.CompiledRule {
+	r := rewriteRule(match, target, source)
+	r.Priority = priority
+	return r
 }
 
 const (
@@ -232,6 +238,56 @@ func TestResolveRewriteNonApplicableFallthrough(t *testing.T) {
 				),
 			},
 			wantAction: "",
+		},
+		{
+			name:  "empty rendered registry -> non-applicable -> fall through",
+			image: "docker.io/library/nginx",
+			rules: []engine.CompiledRule{
+				// Empty Registry literal would be rejected by the
+				// reconciler, but renderTarget guards defence-in-depth
+				// against an admission-time render that produces an
+				// empty registry (the reparse step rejects the
+				// resulting trailing-slash reference).
+				rewriteRule(
+					imageref.Match{Registry: "docker.io"},
+					engine.Target{Registry: ""},
+					primary,
+				),
+				rewriteRule(
+					imageref.Match{Registry: "docker.io"},
+					engine.Target{Registry: "mirror.internal"},
+					fallback,
+				),
+			},
+			wantAction: engine.ActionRewrite,
+			wantImage:  "mirror.internal/library/nginx:latest",
+			wantSource: fallback,
+		},
+		{
+			name:  "empty rendered repository -> non-applicable -> fall through",
+			image: "docker.io/library/nginx",
+			rules: []engine.CompiledRule{
+				// `{repository:path}` on a single-segment repository
+				// returns the empty string, which makes the assembled
+				// reference malformed (trailing slash before the tag).
+				// renderTarget's reparse step rejects it as non-applicable.
+				rewriteRule(
+					imageref.Match{Registry: "docker.io"},
+					engine.Target{
+						Registry:   "mirror.internal",
+						Repository: "{repository:path}",
+					},
+					primary,
+				),
+				rewriteRule(
+					imageref.Match{Registry: "docker.io"},
+					engine.Target{Registry: "mirror.internal"},
+					fallback,
+				),
+			},
+			wantAction: engine.ActionRewrite,
+			wantImage:  "mirror.internal/library/nginx:latest",
+			wantSource: fallback,
 		},
 	}
 

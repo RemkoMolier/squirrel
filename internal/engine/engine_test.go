@@ -43,6 +43,73 @@ func TestResolveUnparseableImageReturnsError(t *testing.T) {
 	}
 }
 
+// TestResolveSkipPreservesDigestInRewrittenImage pins the contract
+// that a skip outcome leaves the image *fully* unchanged - including
+// the digest a caller might have pinned for content-integrity. The
+// engine assembles RewrittenImage via canonicalForm, so a regression
+// where the @<digest> suffix is dropped would silently strip the pin
+// even though Action=Skip says "image unchanged". TestResolveSkipPhase
+// covers the tag side; this is the digest counterpart.
+func TestResolveSkipPreservesDigestInRewrittenImage(t *testing.T) {
+	t.Parallel()
+
+	dec, err := engine.Resolve(
+		"docker.io/library/nginx:1.21@"+testRewriteDigest,
+		[]engine.CompiledRule{
+			skipRule(
+				imageref.Match{Registry: "docker.io"},
+				engine.RuleSource{Scope: engine.ScopeCluster, Name: "skip-rule"},
+			),
+		},
+	)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if dec.Action != engine.ActionSkip {
+		t.Fatalf("Action: got %q, want %q", dec.Action, engine.ActionSkip)
+	}
+	if want := "docker.io/library/nginx:1.21@" + testRewriteDigest; dec.RewrittenImage != want {
+		t.Errorf("RewrittenImage: got %q, want %q (digest must pass through skip unchanged)",
+			dec.RewrittenImage, want)
+	}
+}
+
+// TestResolveSkipPhaseSourceIsDeterministic guards against the
+// webhook (Phase 5) building the rule slice from map iteration and
+// producing arbitrary Decision.Source values across admissions. Two
+// skip rules match; the namespaced one wins (Scope > Name > RuleIndex
+// tie-breaker), regardless of the order the caller passed in.
+func TestResolveSkipPhaseSourceIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	clusterRule := engine.CompiledRule{
+		Match:  imageref.Match{Registry: "docker.io"},
+		Action: engine.ActionSkip,
+		Source: engine.RuleSource{Scope: engine.ScopeCluster, Name: "cluster-skip"},
+	}
+	namespacedRule := engine.CompiledRule{
+		Match:  imageref.Match{Registry: "docker.io"},
+		Action: engine.ActionSkip,
+		Source: engine.RuleSource{Scope: engine.ScopeNamespaced, Name: "ns-skip", Namespace: "team"},
+	}
+
+	for _, order := range [][]engine.CompiledRule{
+		{clusterRule, namespacedRule},
+		{namespacedRule, clusterRule},
+	} {
+		dec, err := engine.Resolve("docker.io/library/nginx:1.21", order)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if dec.Action != engine.ActionSkip {
+			t.Errorf("Action: got %q, want %q", dec.Action, engine.ActionSkip)
+		}
+		if dec.Source != namespacedRule.Source {
+			t.Errorf("Source: got %+v, want namespacedRule.Source (namespaced beats cluster)", dec.Source)
+		}
+	}
+}
+
 func TestResolveSkipPhase(t *testing.T) {
 	t.Parallel()
 
