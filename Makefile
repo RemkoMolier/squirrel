@@ -46,6 +46,24 @@ tidy:
 kubebuilder:
 	$(GO) tool kubebuilder $(ARGS)
 
+# controller-gen generates DeepCopy methods from `+kubebuilder:` markers on
+# the API types and (in a future phase) CRD, RBAC, and webhook manifests.
+# Both targets are idempotent; re-run after touching api/.
+.PHONY: generate
+generate:
+	$(GO) tool controller-gen object paths=./api/...
+
+.PHONY: manifests
+manifests:
+	$(GO) tool controller-gen \
+		crd \
+		rbac:roleName=squirrel-manager \
+		webhook \
+		paths=./... \
+		output:crd:artifacts:config=config/crd/bases \
+		output:rbac:artifacts:config=config/rbac \
+		output:webhook:artifacts:config=config/webhook
+
 # markdownlint is a Node.js tool. The custom rules (title-case-style
 # and max-one-sentence-per-line) live in package.json devDependencies;
 # `npm ci` installs them into node_modules so the markdownlint config's
