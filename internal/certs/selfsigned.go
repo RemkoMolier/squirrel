@@ -157,7 +157,7 @@ func (s *SelfSignedSource) Localize(ctx context.Context) error {
 	// notAfter directly; doing it here means the source never writes
 	// out a bundle the apiserver will reject.
 	if err := verifyBundleWindow(bundle); err != nil {
-		return fmt.Errorf("ensure webhook-cert Secret: %w", err)
+		return fmt.Errorf("verify bundle window: %w", err)
 	}
 	if err := writeBundleToDir(s.opts.CertDir, bundle); err != nil {
 		return fmt.Errorf("write bundle to %q: %w", s.opts.CertDir, err)

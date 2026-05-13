@@ -34,9 +34,15 @@
 //     a passive verifier - Authoritative is a no-op and Localize
 //     parses what cert-manager dropped onto the volume mount.
 //
-//   - Runnable (forthcoming): a controller-runtime manager.Runnable
-//     that periodically calls SelfSignedSource.Ensure so the cert is
-//     rotated before its expiry without operator intervention.
+//   - Runnables (runnable.go): two controller-runtime
+//     manager.Runnables. AuthoritativeRunnable opts INTO leader
+//     election and drives CertSource.Authoritative on a timer so
+//     only one replica writes the apiserver-side material.
+//     LocalSyncRunnable opts OUT of leader election and drives
+//     CertSource.Localize on the same cadence so every replica's
+//     local CertDir stays current. The split eliminates the
+//     resourceVersion-Conflict races the earlier single-runnable
+//     design had to absorb.
 //
 // All keys are ECDSA P-256 per the operator's design choice; CA
 // certificates are valid for five years, serving certificates for one
