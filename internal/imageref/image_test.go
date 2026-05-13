@@ -83,6 +83,22 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			// pkg/name has no way to tell `localhost:5000` (registry
+			// with port and no repository) apart from `name:tag` in
+			// the docker.io namespace, so it takes the latter
+			// interpretation. The test pins the surprising-but-stable
+			// behaviour so a downstream pkg/name change does not
+			// silently shift the meaning of policies that rely on
+			// this form.
+			name: "bare registry-with-port without repository is parsed as docker.io/library/localhost:5000",
+			ref:  "localhost:5000",
+			want: Image{
+				Registry:   "docker.io",
+				Repository: "library/localhost",
+				Tag:        "5000",
+			},
+		},
+		{
 			name: "registry with port preserves an explicit tag",
 			ref:  "localhost:5000/foo:bar",
 			want: Image{
