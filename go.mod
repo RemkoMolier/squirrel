@@ -7,7 +7,10 @@ tool (
 	sigs.k8s.io/kubebuilder/v4
 )
 
-require github.com/google/go-containerregistry v0.21.5
+require (
+	github.com/gobwas/glob v0.2.3
+	github.com/google/go-containerregistry v0.21.5
+)
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
@@ -87,7 +90,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-xmlfmt/xmlfmt v1.1.3 // indirect
 	github.com/gobuffalo/flect v1.0.3 // indirect
-	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.2 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
