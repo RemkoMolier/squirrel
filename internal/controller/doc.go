@@ -21,4 +21,11 @@
 //
 // Behaviour is exhaustively defined by the table-driven tests in this
 // package; the design contract lives in docs/design/v1alpha1.md.
+//
+// controller-gen's rbac generator only honours markers at package
+// scope, so the RBAC permissions every reconciler in this package
+// needs are declared here rather than next to each reconciler type.
+//
+// +kubebuilder:rbac:groups=squirrel.molier.dev,resources=clusterimagepolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=squirrel.molier.dev,resources=clusterimagepolicies/status,verbs=get;update;patch
 package controller
