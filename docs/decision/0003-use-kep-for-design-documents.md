@@ -6,27 +6,27 @@ decision-makers: [RemkoMolier]
 
 # Use KEP-shaped design documents to describe the system design
 
-## Context and Problem Statement
+## Context and problem statement
 
 ADRs capture individual decisions in isolation, but a Kubernetes operator also needs a place to describe the design as a whole: the CRD surface, the resolution semantics, the webhook behaviour, the security model, the alternatives that were rejected at the design level.
 A single document per API version gives readers a coherent view that scattered ADRs cannot provide.
 A format for these design documents must be chosen before the first design document is written.
 
-## Decision Drivers
+## Decision drivers
 
 - The format must be familiar to contributors from the Kubernetes operator ecosystem.
 - The document must be versionable alongside the API surface it describes.
 - The document must cover both intent (Motivation, User Stories, Alternatives) and detail (API Reference, Resolution Semantics, Validation).
 - The document must complement ADRs without overlapping their role.
 
-## Considered Options
+## Considered options
 
 - KEP-shaped design documents, one per API version (<https://github.com/kubernetes/enhancements/tree/master/keps/NNNN-kep-template>)
 - RFC-style standalone proposals (Rust RFCs, Python PEPs)
 - API reference auto-generated from CRD types only, with no narrative design document
 - Brief design discussion in the project README
 
-## Decision Outcome
+## Decision outcome
 
 Chosen option: "KEP-shaped design documents", because the format is purpose-built for Kubernetes API surfaces and is the de-facto convention across the operator ecosystem (Cluster API, cert-manager, Knative, OpenTelemetry, Helm).
 
@@ -68,7 +68,7 @@ The Kubernetes-project-specific sections of the canonical KEP template (Producti
 Each new API version lands with a corresponding `docs/design/<version>.md` in the same pull request or one immediately preceding it.
 Reviewers check that the design document references each ADR whose decision it implements, and that the API surface in code matches the API Reference section of the design document.
 
-## Pros and Cons of the Options
+## Pros and cons of the options
 
 ### KEP-shaped design documents
 
@@ -94,7 +94,7 @@ Reviewers check that the design document references each ADR whose decision it i
 - Bad, because the README must serve many audiences (install, quick start, contributing) and design detail crowds those audiences out.
 - Bad, because the README is not naturally versioned per API.
 
-## More Information
+## More information
 
 The KEP template lives at <https://github.com/kubernetes/enhancements/tree/master/keps/NNNN-kep-template>.
 This ADR establishes that the design lives in `docs/design/v1alpha1.md` (and successor files for later versions); ADRs continue to live in `docs/decision/`.

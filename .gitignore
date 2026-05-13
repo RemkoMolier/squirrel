@@ -1,0 +1,40 @@
+# Binaries
+bin/
+*.exe
+*.so
+*.dylib
+
+# Built binaries at the repo root (one per cmd/ subdir if `go build ./cmd/<name>`
+# is run from here). The Makefile targets always emit into bin/, so this is
+# only a safety net for hand-run go build invocations.
+/manager
+
+# Test artefacts
+*.test
+coverage.out
+coverage.html
+.cover/
+
+# Vendored dependencies (not used; modules only)
+/vendor/
+
+# Build outputs
+/dist/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# envtest assets
+/testbin/
+
+# Node module cache from npm ci (markdownlint custom rules ship via
+# devDependencies; package-lock.json is committed for reproducibility,
+# the resolved tree is not).
+/node_modules/

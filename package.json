@@ -1,0 +1,11 @@
+{
+  "name": "squirrel-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tooling for markdown linting in the squirrel repo. The Go operator code lives outside this package.",
+  "devDependencies": {
+    "markdownlint-cli2": "^0.22.0",
+    "markdownlint-rule-title-case-style": "^0.4.3",
+    "markdownlint-rule-max-one-sentence-per-line": "^0.0.2"
+  }
+}

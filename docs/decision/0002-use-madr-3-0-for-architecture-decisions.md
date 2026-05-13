@@ -6,20 +6,20 @@ decision-makers: [RemkoMolier]
 
 # Use MADR 3.0 for architecture decision records
 
-## Context and Problem Statement
+## Context and problem statement
 
 The squirrel project will accumulate architectural decisions as it grows.
 Future contributors need a reliable way to understand why choices were made and what alternatives were rejected, without having to reconstruct the discussion from chat logs or pull-request threads.
 A format for capturing these decisions must be structured enough to be searchable and skimmable, yet light enough that contributors will actually write them.
 
-## Decision Drivers
+## Decision drivers
 
 - The format must encourage capture of alternatives considered, not just the final decision.
 - Each decision should be a small, focused artefact that can be reviewed in a single pull request.
 - The format must be expressible in Markdown so that ADR-0001 applies to ADR files as well.
 - The format must be familiar to contributors from the broader software architecture community.
 
-## Considered Options
+## Considered options
 
 - MADR 3.0 (<https://adr.github.io/madr/>)
 - Nygard's original ADR format (Context, Decision, Status, Consequences)
@@ -27,7 +27,7 @@ A format for capturing these decisions must be structured enough to be searchabl
 - RFC-style standalone proposals (long-form, one decision per multi-page document)
 - No ADRs; rely on commit messages and pull-request descriptions
 
-## Decision Outcome
+## Decision outcome
 
 Chosen option: "MADR 3.0", because it produces decision records that are structured, complete, and short enough to be written under modest reviewer pressure.
 
@@ -53,7 +53,7 @@ A superseded ADR is never deleted; the superseding ADR links back to it and the 
 Pull requests that introduce architectural decisions include a new ADR.
 Reviewers verify that each new ADR uses the MADR 3.0 structure, has its required sections populated, and is numbered sequentially from the previous merged ADR.
 
-## Pros and Cons of the Options
+## Pros and cons of the options
 
 ### MADR 3.0
 
@@ -84,7 +84,7 @@ Reviewers verify that each new ADR uses the MADR 3.0 structure, has its required
 - Bad, because architectural context is lost as soon as the original contributors move on.
 - Bad, because reviewers cannot tell which prior decisions a change implicitly overturns.
 
-## More Information
+## More information
 
 The MADR 3.0 template and rationale are at <https://adr.github.io/madr/>.
 This ADR is itself written in MADR 3.0 format, so the format is self-documenting from ADR-0002 onwards.

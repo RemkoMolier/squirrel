@@ -6,20 +6,20 @@ decision-makers: [RemkoMolier]
 
 # Use Markdown for documentation, optimised for diff-friendly review
 
-## Context and Problem Statement
+## Context and problem statement
 
 Documentation for the squirrel project lives in source control alongside code, so every change is reviewed in a pull request.
 The chosen documentation format needs to make those reviews easy to read and easy to comment on at the line level.
 A format that produces noisy or unfocused diffs on small edits will discourage contributors from documenting changes thoroughly.
 
-## Decision Drivers
+## Decision drivers
 
 - Pull-request diffs of documentation changes must isolate the substantive edit and not produce reflow noise that obscures it.
 - The format must render natively on GitHub and in common editors without extra tooling.
 - Authoring friction must be low; the format must not require unusual editors or build steps.
 - The format must be familiar to contributors from the Kubernetes operator ecosystem.
 
-## Considered Options
+## Considered options
 
 - Markdown (CommonMark plus GitHub Flavoured Markdown) with semantic line breaks
 - Markdown with hard-wrapped lines at 80 columns
@@ -28,7 +28,7 @@ A format that produces noisy or unfocused diffs on small edits will discourage c
 - reStructuredText
 - External wiki (GitHub wiki, Confluence, or similar)
 
-## Decision Outcome
+## Decision outcome
 
 Chosen option: "Markdown (CommonMark plus GFM) with semantic line breaks", because it produces the cleanest line-level diffs without requiring any toolchain beyond what GitHub already provides.
 
@@ -60,7 +60,7 @@ The convention is enforced socially at code review.
 If a linter is introduced later, it must be configured to leave prose line length alone (in `markdownlint` terms, disable `MD013` or set `line-length: false`).
 Any auto-formatter applied to Markdown files must be configured with the equivalent of Prettier's `proseWrap: preserve` to avoid reflow.
 
-## Pros and Cons of the Options
+## Pros and cons of the options
 
 ### Markdown with semantic line breaks
 
@@ -98,7 +98,7 @@ Any auto-formatter applied to Markdown files must be configured with the equival
 - Bad, because the documentation can drift from the code that exists at any given commit.
 - Bad, because reviews of documentation changes are decoupled from the code review that should accompany them.
 
-## More Information
+## More information
 
 The "semantic line breaks" convention is described at <https://sembr.org/>.
 This decision applies to all documentation in the repository, including the ADRs themselves, future design documents, and any READMEs.

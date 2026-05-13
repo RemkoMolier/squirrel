@@ -1,0 +1,173 @@
+# squirrel - golangci-lint configuration
+#
+# See ADR-0005 (docs/decision/0005-use-golangci-lint-for-code-quality.md).
+#
+# The curated linter set must:
+#
+#   1. Stay close to controller-runtime / Cluster API / cert-manager / kueue baselines.
+#   2. Cover every analyzer that gopls runs by default, so CI never fails
+#      on an issue the IDE did not surface.
+#   3. Exclude linters whose false-positive rate dominates their true findings on this codebase.
+#
+# Audit when bumping golangci-lint or gopls. gopls default-analyzer mapping:
+#
+#   gopls analyzer        | linter providing equivalent coverage
+#   ----------------------+--------------------------------------
+#   printf                | govet (default)
+#   nilness               | govet (default), gocritic
+#   copylocks             | govet (default)
+#   lostcancel            | govet (default)
+#   unusedresult          | govet (default)
+#   shadow                | govet (with shadow enabled, see settings below)
+#   deprecated            | staticcheck
+#   shift, structtag,     | govet (default)
+#   unmarshal, unreachable,
+#   unsafeptr
+#   unusedwrite           | staticcheck
+#   unusedparams          | unparam
+#   simplifyrange,        | staticcheck (gosimple subsumed in golangci-lint v2)
+#   simplifyslice,
+#   simplifycompositelit,
+#   useany
+#
+# golangci-lint v2 merged gosimple and stylecheck into staticcheck;
+# enabling staticcheck inherits both.
+
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # golangci-lint default set (errcheck, govet, ineffassign, staticcheck, unused).
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters per ADR-0005.
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - exhaustive
+    - gocheckcompilerdirectives
+    - gocritic
+    - gosec
+    - importas
+    - misspell
+    - nakedret
+    - nolintlint
+    - prealloc
+    - predeclared
+    - revive
+    - thelper
+    - unconvert
+    - unparam
+    - whitespace
+
+  settings:
+    govet:
+      enable:
+        - shadow
+
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: true
+      comparison: true
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    importas:
+      no-unaliased: true
+      alias:
+        - pkg: k8s.io/apimachinery/pkg/apis/meta/v1
+          alias: metav1
+        - pkg: k8s.io/api/core/v1
+          alias: corev1
+        - pkg: k8s.io/api/admission/v1
+          alias: admissionv1
+        - pkg: k8s.io/api/admissionregistration/v1
+          alias: admissionregistrationv1
+        - pkg: k8s.io/apimachinery/pkg/runtime
+          alias: runtime
+        - pkg: k8s.io/apimachinery/pkg/types
+          alias: types
+        - pkg: sigs.k8s.io/controller-runtime/pkg/client
+          alias: client
+        - pkg: sigs.k8s.io/controller-runtime/pkg/log
+          alias: ctrllog
+        - pkg: github.com/RemkoMolier/squirrel/api/v1alpha1
+          alias: squirrelv1alpha1
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation: []
+      # allow-unused permits a //nolint directive that does not
+      # actually suppress anything. We need this for the SA1019
+      # suppression around the deprecated GetEventRecorderFor: the
+      # local Go toolchain (newer patch) does not fire the
+      # deprecation check, but the CI toolchain does. Without
+      # allow-unused the local run complains the directive is
+      # "unused" while CI complains the deprecation is unsuppressed;
+      # allow-unused: true lets the directive sit silently in both
+      # worlds.
+      allow-unused: true
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    generated: lax
+    # zz_generated.deepcopy.go is controller-gen output; we cannot
+    # add aliases or rerun goimports against it without diverging
+    # from what `make manifests` produces. Skip linter checks that
+    # parse the import block specifically.
+    rules:
+      - path: 'zz_generated\.deepcopy\.go$'
+        linters:
+          - importas
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  exclusions:
+    generated: lax
+    # controller-gen output is regenerated by `make manifests` and
+    # we cannot edit its formatting without diverging from upstream.
+    paths:
+      - 'zz_generated\.deepcopy\.go$'
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/RemkoMolier/squirrel

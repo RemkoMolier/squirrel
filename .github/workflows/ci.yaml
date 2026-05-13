@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise reads .tool-versions and installs every pinned runtime
+      # (Go, Node, and - in later jobs - kubectl / kubeconform /
+      # kube-linter), keeping local dev and CI on byte-identical
+      # toolchains. The action handles its own caching.
+      - uses: jdx/mise-action@v2
+      - run: go test -race -count=1 ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      # golangci-lint is pinned in go.mod via the `tool` directive;
+      # invoking it through `go tool` keeps CI and local in lockstep.
+      - run: go tool golangci-lint run ./...
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise provides the Node version pinned in .tool-versions, so the
+      # `npx markdownlint-cli2` shell-out matches the contributor flow
+      # documented in the Makefile. The custom rules
+      # (title-case-style + max-one-sentence-per-line) live in
+      # package.json devDependencies and load via Node module
+      # resolution from node_modules/, so `npm ci` is mandatory before
+      # the lint step.
+      - uses: jdx/mise-action@v2
+      - run: npm ci --no-audit --no-fund
+      - run: npx markdownlint-cli2
