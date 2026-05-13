@@ -74,13 +74,6 @@ type ClusterImagePolicySpec struct {
 	Rules []Rule `json:"rules"`
 }
 
-// ClusterImagePolicyStatus reports the reconciler's observation of a
-// ClusterImagePolicy.
-//
-// Subsequent commits in Phase 2 populate this with conditions and the
-// observedGeneration.
-type ClusterImagePolicyStatus struct{}
-
 // ImagePolicy is the namespaced sibling of ClusterImagePolicy. It applies
 // only to Pods in its own namespace.
 //
@@ -150,7 +143,3 @@ type ImagePolicySpec struct {
 	// +kubebuilder:validation:MaxItems=128
 	Rules []Rule `json:"rules"`
 }
-
-// ImagePolicyStatus reports the reconciler's observation of an
-// ImagePolicy. Same shape as ClusterImagePolicyStatus.
-type ImagePolicyStatus struct{}
