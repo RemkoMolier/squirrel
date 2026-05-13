@@ -24,22 +24,27 @@ const (
 // in webhook, controller, and certs can increment them directly.
 var (
 	// RewritesTotal counts every container image actually mutated
-	// by the admission handler. Labels identify the policy that
-	// drove the rewrite and the admission namespace.
+	// by the admission handler. The namespace label is the
+	// admission namespace (where the Pod was admitted), not the
+	// policy's own namespace: a ClusterImagePolicy match would
+	// otherwise emit namespace="" and lose the location signal
+	// operators alert on. The policy is already identified by
+	// policy_kind + policy_name.
 	RewritesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "squirrel_rewrites_total",
-			Help: "Total number of container image rewrites the webhook has performed.",
+			Help: "Total number of container image rewrites the webhook has performed. Labelled by policy + admission namespace.",
 		},
 		[]string{LabelPolicyKind, LabelPolicyName, LabelNamespace},
 	)
 
 	// SkipsTotal counts every container matched by a skip rule.
-	// Same label set as RewritesTotal.
+	// Same label set as RewritesTotal; namespace is the admission
+	// namespace.
 	SkipsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "squirrel_skips_total",
-			Help: "Total number of container images the webhook left unchanged because a skip rule matched.",
+			Help: "Total number of container images the webhook left unchanged because a skip rule matched. Labelled by policy + admission namespace.",
 		},
 		[]string{LabelPolicyKind, LabelPolicyName, LabelNamespace},
 	)
@@ -117,10 +122,12 @@ var (
 	// InvalidTargetRendersTotal counts rewrite rules whose target
 	// produced an invalid render at admission time (e.g. a template
 	// placeholder rendered to an empty value that broke OCI validity).
+	// Same namespace semantics as RewritesTotal: the admission
+	// namespace, not the policy's own namespace.
 	InvalidTargetRendersTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "squirrel_invalid_target_renders_total",
-			Help: "Total number of rewrite rules whose target produced an invalid render at admission time.",
+			Help: "Total number of rewrite rules whose target produced an invalid render at admission time. Labelled by policy + admission namespace.",
 		},
 		[]string{LabelPolicyKind, LabelPolicyName, LabelNamespace},
 	)
