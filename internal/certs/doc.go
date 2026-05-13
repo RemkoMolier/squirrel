@@ -23,11 +23,16 @@
 //     issued when every webhook entry already carries the requested
 //     bytes.
 //
-//   - CertSource interface + implementations (forthcoming):
-//     SelfSignedSource composes the layers above and writes the
-//     serving material to disk for the webhook server. CertManagerSource
-//     is a passive reader that trusts cert-manager to populate the
-//     mounted Secret-projected volume.
+//   - CertSource interface + implementations (source.go,
+//     selfsigned.go, certmanager.go): the contract every cert mode
+//     satisfies. Two halves: Authoritative writes apiserver state
+//     (Secret + MWC) and runs only on the leader; Localize reads
+//     apiserver state and reflects it onto CertDir, running on
+//     every replica. SelfSignedSource composes Ensure +
+//     PatchMWCaBundle on the authoritative side and atomic temp-
+//     file-rename writes on the localize side. CertManagerSource is
+//     a passive verifier - Authoritative is a no-op and Localize
+//     parses what cert-manager dropped onto the volume mount.
 //
 //   - Runnable (forthcoming): a controller-runtime manager.Runnable
 //     that periodically calls SelfSignedSource.Ensure so the cert is
@@ -54,9 +59,17 @@
 // or modify any other MWC even if its credentials leaked. The
 // matching get/list rule without resourceNames lets controller-
 // runtime cache the resource (List is not name-filterable), but
-// the actual write access is name-scoped.
+// the actual write access is name-scoped. The same pattern is
+// applied to the webhook-cert Secret: get/update/patch are scoped
+// to the named Secret squirrel-webhook-tls via resourceNames; the
+// separate create rule is unscoped because Kubernetes RBAC does
+// not honour resourceNames on `create` (a permission to create a
+// specific name is structurally impossible). The namespace
+// restriction (squirrel-system) bounds the create-any leak to a
+// single namespace the operator already owns.
 //
-// +kubebuilder:rbac:groups="",namespace=squirrel-system,resources=secrets,verbs=get;create;update;patch
+// +kubebuilder:rbac:groups="",namespace=squirrel-system,resources=secrets,verbs=create
+// +kubebuilder:rbac:groups="",namespace=squirrel-system,resources=secrets,resourceNames=squirrel-webhook-tls,verbs=get;update;patch
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,resourceNames=squirrel-image-rewrite,verbs=update;patch
 package certs

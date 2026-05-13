@@ -1,6 +1,13 @@
 package certs_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +69,48 @@ func TestParseCARejectsTrailingData(t *testing.T) {
 
 	if _, err := certs.ParseCA(concatenated, ca.KeyPEM()); err == nil {
 		t.Errorf("ParseCA accepted concatenated PEM; want error")
+	}
+}
+
+// TestVerifyServingMaterialRejectsECDSACurveBelowFloor pins the
+// ECDSA curve floor symmetric to the 2048-bit RSA minimum: a key
+// backed by P-224 (NIST's legacy curve still accepted by some FIPS
+// profiles but below the 128-bit-security-strength floor) must be
+// rejected at the decode step, before any handshake math runs.
+// SelfSignedSource mints P-256 and never trips this; the check
+// exists for cert-manager Secrets that originated from a
+// non-standard Issuer.
+func TestVerifyServingMaterialRejectsECDSACurveBelowFloor(t *testing.T) {
+	t.Parallel()
+
+	key, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(P224): %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "weak-curve-leaf"},
+		NotBefore:    testTime,
+		NotAfter:     testTime.Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+
+	err = certs.VerifyServingMaterial(certPEM, keyPEM)
+	if err == nil {
+		t.Fatal("expected error rejecting P-224 ECDSA key, got nil")
+	}
+	if !strings.Contains(err.Error(), "P-256, P-384, P-521") {
+		t.Errorf("error message %q does not name the accepted-curve list", err)
 	}
 }
 

@@ -3,6 +3,8 @@ package certs
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -79,6 +81,15 @@ func decodeCertPEM(data []byte) (*x509.Certificate, error) {
 // issued TLS Secrets follow this leaf-plus-chain shape on tls.crt;
 // the webhook server happily presents the whole chain at handshake
 // time, so the verifier must accept it.
+//
+// Input size is implicitly bounded by the upstream that produced
+// data: in production this is either the operator's webhook-cert
+// Secret (apiserver caps Secret data at 1 MiB) or a cert-manager
+// Secret with the same cap, so a maliciously huge PEM payload
+// cannot reach this code path within the supported deployment
+// shape. The function does not impose its own byte cap; if a
+// future caller feeds it unbounded input, add one at the call
+// site rather than here.
 func decodeLeafCertPEM(data []byte) (*x509.Certificate, error) {
 	block, rest := pem.Decode(data)
 	if block == nil {
@@ -150,6 +161,35 @@ func decodeKeyPEM(data []byte) (*ecdsa.PrivateKey, error) {
 // The return value satisfies crypto.Signer (every supported key
 // algorithm does), so callers compare public-key equality via
 // Signer.Public().
+// minRSAKeyBits is the floor we accept for RSA private keys. 2048
+// is the floor every modern security baseline (NIST SP 800-57,
+// CA/Browser Forum Baseline Requirements, FIPS 140-3) settles on;
+// anything shorter is broken-by-design for new TLS material. The
+// SelfSignedSource emits ECDSA P-256 keys and never trips this
+// check; the floor exists for cert-manager bundles that might land
+// historical 1024-bit RSA material on disk.
+const minRSAKeyBits = 2048
+
+// enforceECDSACurve rejects ECDSA private keys backed by curves
+// below NIST's 128-bit-security-strength floor. P-256, P-384, and
+// P-521 are accepted; P-224 and P-192 (the legacy curves still
+// nominally allowed by some FIPS profiles) are not. The
+// SelfSignedSource always mints P-256, so this check fires only on
+// cert-manager material that originated from a non-standard
+// Issuer or a misconfigured operator policy.
+func enforceECDSACurve(key *ecdsa.PrivateKey) error {
+	switch key.Curve {
+	case elliptic.P256(), elliptic.P384(), elliptic.P521():
+		return nil
+	default:
+		name := "unknown"
+		if p := key.Params(); p != nil {
+			name = p.Name
+		}
+		return fmt.Errorf("ECDSA private key uses curve %q; accepted curves are P-256, P-384, P-521", name)
+	}
+}
+
 func decodeAnyPrivateKey(data []byte) (crypto.Signer, error) {
 	block, rest := pem.Decode(data)
 	if block == nil {
@@ -164,11 +204,17 @@ func decodeAnyPrivateKey(data []byte) (crypto.Signer, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse EC private key: %w", err)
 		}
+		if err := enforceECDSACurve(key); err != nil {
+			return nil, err
+		}
 		return key, nil
 	case pemTypeRSAPrivKey:
 		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("parse RSA (PKCS#1) private key: %w", err)
+		}
+		if bits := key.N.BitLen(); bits < minRSAKeyBits {
+			return nil, fmt.Errorf("RSA private key is %d bits; the minimum accepted is %d", bits, minRSAKeyBits)
 		}
 		return key, nil
 	case pemTypePKCS8Key:
@@ -179,6 +225,16 @@ func decodeAnyPrivateKey(data []byte) (crypto.Signer, error) {
 		signer, ok := key.(crypto.Signer)
 		if !ok {
 			return nil, fmt.Errorf("decode key PEM: PKCS#8 key type %T does not implement crypto.Signer", key)
+		}
+		switch typed := signer.(type) {
+		case *rsa.PrivateKey:
+			if bits := typed.N.BitLen(); bits < minRSAKeyBits {
+				return nil, fmt.Errorf("RSA private key (PKCS#8) is %d bits; the minimum accepted is %d", bits, minRSAKeyBits)
+			}
+		case *ecdsa.PrivateKey:
+			if err := enforceECDSACurve(typed); err != nil {
+				return nil, err
+			}
 		}
 		return signer, nil
 	default:
