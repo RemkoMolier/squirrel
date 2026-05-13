@@ -25,6 +25,11 @@ import (
 // upstream of squirrel.
 var placeholderShapeRe = regexp.MustCompile(`\{[^}]*\}`)
 
+// ociTagRe encodes the OCI distribution-spec tag rule: a leading word
+// character (alphanumeric or underscore) followed by up to 127 word,
+// `.`, or `-` characters. Used to short-circuit the SelectTag walk.
+var ociTagRe = regexp.MustCompile(`^\w[\w.-]{0,127}$`)
+
 // ValidateFieldTemplate checks that a template intended for the registry
 // or repository field of a target uses only known placeholders. It does
 // not require an Image because validation runs at reconcile time, before
@@ -235,6 +240,31 @@ func repositorySubform(sub, repo string) string {
 		return strings.ReplaceAll(repo, "/", "-")
 	}
 	return repo
+}
+
+// SelectTag walks the tag templates in order and returns the first one that
+// renders, against the given image, to a non-empty OCI-valid tag. The ok
+// return is false when no candidate produces a valid tag - the caller (the
+// engine) treats this as "rule does not apply" and falls through to the
+// next applicable rule.
+//
+// SelectTag is forgiving by design: render-time errors on an individual
+// template (unknown placeholders, bare {digest} in tags) cause that
+// template to be skipped, not returned. Reconcile-time validation via
+// ValidateTagTemplate is the right place to surface those policy bugs;
+// SelectTag's tolerance is the defence-in-depth for templates that
+// somehow slipped through.
+func SelectTag(templates []string, img Image) (string, bool) {
+	for _, tmpl := range templates {
+		rendered, err := RenderTag(tmpl, img)
+		if err != nil {
+			continue
+		}
+		if ociTagRe.MatchString(rendered) {
+			return rendered, true
+		}
+	}
+	return "", false
 }
 
 func digestSubform(sub, digest string) string {

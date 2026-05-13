@@ -310,3 +310,90 @@ func TestValidateTagTemplateAcceptsDigestSubforms(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectTag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		templates []string
+		img       Image
+		want      string
+		wantOK    bool
+	}{
+		{
+			name:      "first valid template wins",
+			templates: []string{"{tag}", "{digest:short8}"},
+			img:       hubNginx,
+			want:      "1.21",
+			wantOK:    true,
+		},
+		{
+			name:      "falls through to the next candidate when the first renders empty",
+			templates: []string{"{tag}", "{digest:short8}"},
+			img:       Image{Registry: "docker.io", Repository: "library/nginx", Digest: testDigestSHA256},
+			want:      "11111111",
+			wantOK:    true,
+		},
+		{
+			name:      "falls through to literal fallback when earlier candidates fail",
+			templates: []string{"{tag}", "{digest:short8}", "latest"},
+			img:       Image{Registry: "docker.io", Repository: "library/nginx"},
+			want:      "latest",
+			wantOK:    true,
+		},
+		{
+			name:      "no candidate yields a valid tag returns not-ok",
+			templates: []string{"{tag}", "{digest:short8}"},
+			img:       Image{Registry: "docker.io", Repository: "library/nginx"},
+			want:      "",
+			wantOK:    false,
+		},
+		{
+			name:      "empty list returns not-ok",
+			templates: nil,
+			img:       hubNginx,
+			want:      "",
+			wantOK:    false,
+		},
+		{
+			name:      "unrenderable templates are skipped silently",
+			templates: []string{"{digest}", "{unknown}", "{tag}"},
+			img:       hubNginx,
+			want:      "1.21",
+			wantOK:    true,
+		},
+		{
+			name:      "OCI-invalid renders are skipped",
+			templates: []string{"-bad", ".bad", "ok"},
+			img:       hubNginx,
+			want:      "ok",
+			wantOK:    true,
+		},
+		{
+			name:      "literal templates render unchanged",
+			templates: []string{"v1.2.3"},
+			img:       hubNginx,
+			want:      "v1.2.3",
+			wantOK:    true,
+		},
+		{
+			name:      "composed tag with digest sub-form",
+			templates: []string{"v{tag}-{digest:short8}"},
+			img:       hubNginx,
+			want:      "v1.21-11111111",
+			wantOK:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := SelectTag(tt.templates, tt.img)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("SelectTag(%v, %+v) = (%q, %t), want (%q, %t)",
+					tt.templates, tt.img, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
