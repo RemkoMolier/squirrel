@@ -33,6 +33,28 @@ func (m Match) Matches(img Image) bool {
 		matchGlob(orDefault(m.Digest, "*"), img.Digest)
 }
 
+// Normalised returns the canonical four-component string form of this match
+// with per-field defaults filled in:
+//
+//	<registry>/<repository>:<tag>@<digest>
+//
+// where omitted fields are replaced by their default globs (`*` or `**`).
+// Two semantically equivalent Match values - one constructed structurally,
+// one parsed from a glob string - return the same Normalised() result.
+func (m Match) Normalised() string {
+	return orDefault(m.Registry, "*") +
+		"/" + orDefault(m.Repository, "**") +
+		":" + orDefault(m.Tag, "*") +
+		"@" + orDefault(m.Digest, "*")
+}
+
+// Specificity returns the byte length of the normalised form of this match.
+// Longer, more literal globs score higher; this is the default rule
+// priority before any explicit override on the rule itself.
+func (m Match) Specificity() int {
+	return len(m.Normalised())
+}
+
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
