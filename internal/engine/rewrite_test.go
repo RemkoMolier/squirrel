@@ -257,6 +257,52 @@ func TestResolveRewriteNonApplicableFallthrough(t *testing.T) {
 	}
 }
 
+// TestResolveSkipBeatsRewriteRegardlessOfOrdering pins down the
+// design's phase ordering: every skip rule is considered before any
+// rewrite rule. The test sets up an image that matches both a skip
+// rule and a rewrite rule, with the rewrite rule placed first in slice
+// order, and asserts the skip wins. This guards against a future
+// refactor that folds the two phases into one loop and accidentally
+// re-orders them.
+func TestResolveSkipBeatsRewriteRegardlessOfOrdering(t *testing.T) {
+	t.Parallel()
+
+	skipSource := engine.RuleSource{Scope: engine.ScopeCluster, Name: "skip-rule"}
+	rewriteSource := engine.RuleSource{Scope: engine.ScopeCluster, Name: "rewrite-rule"}
+
+	dec, err := engine.Resolve(
+		"docker.io/library/nginx:1.21",
+		[]engine.CompiledRule{
+			// Rewrite rule listed first; the engine must still apply
+			// the skip rule below because skip is a separate, earlier
+			// phase.
+			rewriteRule(
+				imageref.Match{Registry: "docker.io"},
+				engine.Target{Registry: "mirror.internal"},
+				rewriteSource,
+			),
+			{
+				Match:  imageref.Match{Registry: "docker.io", Repository: "library/nginx"},
+				Action: engine.ActionSkip,
+				Source: skipSource,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if dec.Action != engine.ActionSkip {
+		t.Errorf("Action: got %q, want %q", dec.Action, engine.ActionSkip)
+	}
+	if dec.Source != skipSource {
+		t.Errorf("Source: got %+v, want %+v", dec.Source, skipSource)
+	}
+	if want := "docker.io/library/nginx:1.21"; dec.RewrittenImage != want {
+		t.Errorf("RewrittenImage: got %q, want %q (skip should leave the image canonicalised but unchanged)",
+			dec.RewrittenImage, want)
+	}
+}
+
 // TestResolveRewriteDigestPassthrough confirms the design's content-
 // integrity guarantee: the input digest is carried verbatim into the
 // rewritten reference, regardless of which target fields are templated.
