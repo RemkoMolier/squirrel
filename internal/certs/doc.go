@@ -17,9 +17,11 @@
 //     concurrently (the loser of the Create reads the winner's
 //     material).
 //
-//   - MWC patcher (forthcoming): write the CA bundle into the
+//   - MWC patcher (mwc.go): write the CA bundle into the
 //     MutatingWebhookConfiguration's clientConfig so the apiserver
-//     trusts the webhook server's serving cert.
+//     trusts the webhook server's serving cert. Idempotent: no Update
+//     issued when every webhook entry already carries the requested
+//     bytes.
 //
 //   - CertSource interface + implementations (forthcoming):
 //     SelfSignedSource composes the layers above and writes the
@@ -47,5 +49,14 @@
 // ClusterRole would have granted read/write of every Secret in
 // the cluster.
 //
+// The mutatingwebhookconfigurations rule is restricted to the
+// design's MWC name via resourceNames, so the manager cannot read
+// or modify any other MWC even if its credentials leaked. The
+// matching get/list rule without resourceNames lets controller-
+// runtime cache the resource (List is not name-filterable), but
+// the actual write access is name-scoped.
+//
 // +kubebuilder:rbac:groups="",namespace=squirrel-system,resources=secrets,verbs=get;create;update;patch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,resourceNames=squirrel-image-rewrite,verbs=update;patch
 package certs
