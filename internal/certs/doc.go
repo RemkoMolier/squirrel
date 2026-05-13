@@ -10,9 +10,12 @@
 //     dependency; they are pure functions of their inputs and the
 //     provided clock.
 //
-//   - Secret round-trip (forthcoming): load the CA + serving
-//     material from a Kubernetes Secret and re-issue when it is
-//     missing or near expiry. Idempotent under repeated calls.
+//   - Secret round-trip (secret.go): load the CA + serving material
+//     from a Kubernetes Secret and re-issue when it is missing,
+//     unparseable, or near expiry. Idempotent under repeated calls;
+//     race-resistant when multiple replicas Ensure the same Secret
+//     concurrently (the loser of the Create reads the winner's
+//     material).
 //
 //   - MWC patcher (forthcoming): write the CA bundle into the
 //     MutatingWebhookConfiguration's clientConfig so the apiserver
@@ -33,4 +36,16 @@
 // year, and rotation triggers when a certificate is within thirty days
 // of its expiry. These defaults are unconfigurable in the primitives
 // layer - the SelfSignedSource exposes the threshold as a flag.
+//
+// controller-gen's rbac generator only honours markers at package
+// scope, so the apiserver permissions Ensure / PatchMWCaBundle
+// require are declared here rather than next to the call sites.
+// The Secret verbs are namespace-scoped (namespace=squirrel-system),
+// so controller-gen emits a Role + RoleBinding rather than a
+// ClusterRole - the SelfSignedSource only ever touches the
+// webhook-cert Secret in the operator's own namespace, and a
+// ClusterRole would have granted read/write of every Secret in
+// the cluster.
+//
+// +kubebuilder:rbac:groups="",namespace=squirrel-system,resources=secrets,verbs=get;create;update;patch
 package certs
