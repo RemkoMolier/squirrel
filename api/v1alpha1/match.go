@@ -78,8 +78,11 @@ type Match struct {
 // same matching path. Exactly one of String / Structured is set after a
 // successful unmarshal.
 //
-// +kubebuilder:validation:Schemaless
-// +kubebuilder:validation:XPreserveUnknownFields
+// The Schemaless / XPreserveUnknownFields kubebuilder markers must be
+// placed at the *use-site* (the Rule.Match field) rather than on this
+// type, otherwise controller-gen emits `type: object` in the generated
+// CRD and the API server rejects the documented string form
+// (`match: "docker.io/**:*"`) before the custom UnmarshalJSON can run.
 type MatchExpr struct {
 	// String holds the glob-string form when set. Mutually exclusive with
 	// Structured.
