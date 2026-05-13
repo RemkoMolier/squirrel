@@ -106,19 +106,6 @@ func TestResolveSkipPhase(t *testing.T) {
 			wantAction: engine.ActionSkip,
 			wantSource: sourceB,
 		},
-		{
-			name:  "non-skip rules are ignored in the skip phase",
-			image: "docker.io/library/nginx:1.21",
-			rules: []engine.CompiledRule{
-				{
-					Match:  imageref.Match{Registry: "docker.io"},
-					Action: engine.ActionRewrite,
-					Target: engine.Target{Registry: "mirror.internal"},
-					Source: sourceA,
-				},
-			},
-			wantAction: "", // rewrite phase not yet wired up; for now this falls through.
-		},
 	}
 
 	for _, tt := range tests {

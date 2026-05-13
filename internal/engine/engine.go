@@ -155,14 +155,93 @@ func Resolve(image string, rules []CompiledRule) (Decision, error) {
 		}
 	}
 
-	// Phase 2: rewrite rules. Not yet implemented; subsequent commits
-	// in this phase wire up priority-ordered iteration, target
-	// rendering, and the non-applicable fallthrough.
+	// Phase 2: rewrite rules. Walk the rewrite rules in slice order
+	// (priority sorting + tie-breakers will be folded in via a
+	// follow-up commit in this phase). The first rule whose match
+	// expression matches the input and whose target renders to a valid
+	// OCI image reference wins; rules that match but render
+	// invalidly are non-applicable per the design and we move on.
+	for _, r := range rules {
+		if r.Action != ActionRewrite {
+			continue
+		}
+		if !r.Match.Matches(parsed) {
+			continue
+		}
+		rendered, ok := renderTarget(r.Target, parsed)
+		if !ok {
+			continue
+		}
+		return Decision{
+			OriginalImage:  parsed,
+			RewrittenImage: rendered,
+			Action:         ActionRewrite,
+			Source:         r.Source,
+		}, nil
+	}
 
 	return Decision{
 		OriginalImage:  parsed,
 		RewrittenImage: canonicalForm(parsed),
 	}, nil
+}
+
+// renderTarget renders a Target against the input image and assembles
+// the result into a canonical image-reference string. The second
+// return is false when the rule is non-applicable for this container:
+//
+//   - the target's Registry is empty (the reconciler should reject this
+//     upstream; defence-in-depth here so the engine never produces a
+//     malformed reference);
+//   - a template references an unknown placeholder
+//     (RenderField surfaces this; the reconciler should also have
+//     rejected the rule);
+//   - no Tags candidate renders to a non-empty OCI-valid tag
+//     (SelectTag returns ok=false);
+//   - the assembled reference fails imageref.Parse validation, e.g.
+//     because a sub-form rendered to the empty string and produced a
+//     trailing slash.
+//
+// On a non-applicable result the caller continues to the next rewrite
+// rule per the design; only a successful render returns a Decision.
+func renderTarget(target Target, original imageref.Image) (string, bool) {
+	if target.Registry == "" {
+		return "", false
+	}
+
+	registry, err := imageref.RenderField(target.Registry, original)
+	if err != nil || registry == "" {
+		return "", false
+	}
+
+	repositoryTemplate := target.Repository
+	if repositoryTemplate == "" {
+		repositoryTemplate = "{repository}"
+	}
+	repository, err := imageref.RenderField(repositoryTemplate, original)
+	if err != nil || repository == "" {
+		return "", false
+	}
+
+	tags := target.Tags
+	if len(tags) == 0 {
+		tags = []string{"{tag}"}
+	}
+	tag, ok := imageref.SelectTag(tags, original)
+	if !ok {
+		return "", false
+	}
+
+	assembled := registry + "/" + repository + ":" + tag
+	if original.Digest != "" {
+		assembled += "@" + original.Digest
+	}
+
+	parsed, err := imageref.Parse(assembled)
+	if err != nil {
+		return "", false
+	}
+	return canonicalForm(parsed), true
 }
 
 // canonicalForm returns the canonical string representation of an
