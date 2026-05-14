@@ -1,0 +1,28 @@
+# PodDisruptionBudget keeping at least one manager pod available
+# during voluntary disruptions (node drains, rolling updates). With
+# the Deployment's replicas: 2 and failurePolicy: Ignore on the MWC,
+# a single-pod outage is already non-fatal (admissions pass through),
+# but losing both replicas at once would leave the webhook
+# unreachable for the duration of the disruption window. The PDB
+# tells the cluster to keep one running so policy enforcement stays
+# continuous through routine maintenance.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: squirrel-manager
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+spec:
+  minAvailable: 1
+  # AlwaysAllow lets the eviction API drain a NotReady pod even when
+  # the budget is already exhausted. Without it, a NotReady manager
+  # pod blocks node drains until the budget recovers - operationally
+  # painful on a webhook whose readiness depends on a Secret that
+  # might be temporarily absent (during initial bootstrap or rotation).
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: squirrel
+      app.kubernetes.io/component: manager

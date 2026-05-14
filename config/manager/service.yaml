@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: squirrel-webhook
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+  ports:
+    # The apiserver dials webhooks on port 443; the operator's
+    # webhook server listens on 9443. Match the SANs the
+    # SelfSignedSource generates: <name>.<ns>.svc and
+    # <name>.<ns>.svc.cluster.local.
+    - name: webhook
+      port: 443
+      targetPort: webhook
+      protocol: TCP

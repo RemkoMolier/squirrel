@@ -1,0 +1,40 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: squirrel-manager
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  # The role name matches the rbac:roleName argument controller-gen
+  # is invoked with in `make manifests`; keep them in sync.
+  name: squirrel-manager
+subjects:
+  - kind: ServiceAccount
+    name: squirrel-manager
+    namespace: squirrel-system
+---
+# The namespace-scoped binding that pairs with the squirrel-manager
+# Role controller-gen emits for the namespace=squirrel-system
+# secrets marker in internal/certs/doc.go. The Role lives in
+# squirrel-system and grants get/create/update/patch on Secrets
+# inside that namespace only; this binding is what makes the
+# operator's ServiceAccount actually exercise those verbs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: squirrel-manager
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: squirrel-manager
+subjects:
+  - kind: ServiceAccount
+    name: squirrel-manager
+    namespace: squirrel-system

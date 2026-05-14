@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squirrel-manager
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+spec:
+  replicas: 2
+  # Explicit RollingUpdate strategy keeps admission webhook coverage
+  # continuous across rollouts: at least one replica stays Ready while
+  # the other rolls. maxSurge: 1 + maxUnavailable: 0 means we always
+  # add a new pod before removing an old one (no admission gap).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: squirrel
+      app.kubernetes.io/component: manager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: squirrel
+        app.kubernetes.io/component: manager
+    spec:
+      serviceAccountName: squirrel-manager
+      # 30s gives in-flight webhook calls room to finish before the
+      # apiserver gives up (the MWC timeoutSeconds is 5s, so 30s is
+      # 6x the per-call ceiling and lets a kubelet drain complete
+      # without dropping admissions on the floor). 10s was tight on
+      # bursty admission spikes during a rolling update.
+      terminationGracePeriodSeconds: 30
+      # Spread the two replicas across zones (preferred) and nodes
+      # (required) so a single-AZ outage or node-drain cannot take
+      # both pods down at the same time. ScheduleAnyway as the
+      # whenUnsatisfiable on zones keeps a single-zone cluster
+      # schedulable; the node-level constraint is hard because two
+      # pods on the same node share a fate domain we never want to
+      # cover.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: squirrel
+              app.kubernetes.io/component: manager
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: squirrel
+              app.kubernetes.io/component: manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          # The :dev tag is a development placeholder. Operators
+          # deploying a release pin a specific tag or digest before
+          # `kubectl apply -k` via:
+          #
+          #   cd config/default
+          #   kustomize edit set image \
+          #     ghcr.io/remkomolier/squirrel=ghcr.io/remkomolier/squirrel:v0.1.0
+          #
+          # The default kustomize overlay does not override this
+          # field, so a literal `kubectl apply -k config/default`
+          # against an unbuilt :dev tag will ImagePullBackOff -
+          # documented in INSTALL.md.
+          image: ghcr.io/remkomolier/squirrel:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect=true
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            - --webhook-port=9443
+          env:
+            # Downward API: the operator reads its own namespace
+            # from this env var and refuses to mutate Pods that
+            # share it (defensive complement to the MWC selector).
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: probes
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probes
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probes
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            # The webhook server reads tls.crt and tls.key from
+            # this path. In self-signed mode the operator's
+            # SelfSignedSource writes the material here at startup;
+            # in cert-manager mode (see config/overlays/cert-manager)
+            # this volume is replaced with a Secret-projected one.
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: false
+      volumes:
+        # Self-signed mode default: an emptyDir the operator writes
+        # to. The cert-manager overlay replaces this volume with a
+        # `secret:` projection cert-manager keeps current.
+        - name: webhook-certs
+          emptyDir: {}
