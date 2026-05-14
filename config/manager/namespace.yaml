@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: manager
+    # The operator namespace is deliberately not opted in: PodMutator
+    # refuses to mutate Pods here even if this label were set, and
+    # squirrel never wants to rewrite the image of its own pods.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

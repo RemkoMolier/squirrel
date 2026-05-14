@@ -1,0 +1,68 @@
+# JSON Patch (RFC 6902) that strips the secrets and
+# mutatingwebhookconfigurations rules from the generated ClusterRole
+# in cert-manager mode. cert-manager owns the Secret (writes
+# tls.crt / tls.key into it on every rotation) and the MWC's
+# caBundle (rewritten by cert-manager-controller via the
+# inject-ca-from annotation), so the operator needs neither verb.
+# Trimming them keeps the operator's blast-radius in cert-manager
+# deployments to the smallest principle-of-least-privilege set.
+#
+# Replacing /rules wholesale is more robust than removing
+# individual indices: a future controller-gen change that reorders
+# the rules array would silently shift the indices, but the
+# replace-the-whole-thing approach is index-independent.
+- op: replace
+  path: /rules
+  value:
+    # Reconcilers emit Kubernetes Events on every Accepted=True/False
+    # status write so `kubectl describe (cluster)imagepolicy` surfaces
+    # the policy outcome to operators. The Recorder needs core/v1
+    # events create + patch in any namespace; without these verbs the
+    # event writes silently fail with RBAC forbidden in cert-manager
+    # mode while status updates continue, which would defeat the
+    # operator-facing observability story.
+    - apiGroups:
+        - ""
+      resources:
+        - events
+      verbs:
+        - create
+        - patch
+    # Reconciler reads on the policy kinds.
+    - apiGroups:
+        - squirrel.molier.dev
+      resources:
+        - clusterimagepolicies
+        - imagepolicies
+      verbs:
+        - get
+        - list
+        - watch
+    # Reconciler status writes.
+    - apiGroups:
+        - squirrel.molier.dev
+      resources:
+        - clusterimagepolicies/status
+        - imagepolicies/status
+      verbs:
+        - get
+        - patch
+        - update
+    # The PodMutator handler looks up namespace labels (the
+    # OptInLabel check). All other namespace operations are
+    # read-only.
+    - apiGroups:
+        - ""
+      resources:
+        - namespaces
+      verbs:
+        - get
+        - list
+        - watch
+    # NOTE: Lease verbs deliberately omitted from the ClusterRole.
+    # controller-runtime's leader election uses a coordination.k8s.io
+    # Lease in the operator's own namespace; the default overlay
+    # ships a namespace-scoped Role + RoleBinding for those verbs
+    # (config/rbac/role.yaml emitted from the +kubebuilder:rbac
+    # marker in internal/manager/doc.go with namespace=squirrel-system),
+    # which the cert-manager overlay inherits unchanged.

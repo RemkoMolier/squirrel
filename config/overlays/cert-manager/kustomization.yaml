@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Cert-manager overlay: layered on top of config/default. Apply with:
+#
+#   kubectl apply -k config/overlays/cert-manager
+#
+# Requires cert-manager v1.0+ installed in the cluster (its CRDs
+# need to exist before the Certificate/Issuer applied here).
+
+resources:
+  - ../../default
+  - certificate.yaml
+
+patches:
+  # Switch the Deployment to cert-manager mode and replace the
+  # emptyDir cert volume with a Secret projection.
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: squirrel-manager
+    path: deployment_patch.yaml
+  # Annotate the (already-renamed by the default overlay) MWC so
+  # cert-manager injects the bundle.
+  - target:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: MutatingWebhookConfiguration
+      name: squirrel-image-rewrite
+    path: mwc_patch.yaml
+  # Strip the secrets + mutatingwebhookconfigurations rules from
+  # the ClusterRole. cert-manager owns both resources in this mode,
+  # so the operator never exercises those verbs - removing them
+  # keeps the operator's principle-of-least-privilege blast radius
+  # to the policy + namespace surface.
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: ClusterRole
+      name: squirrel-manager
+    path: role_patch.yaml
+  # In cert-manager mode the operator is a passive verifier of the
+  # mounted cert files; cert-manager owns the webhook Secret. The
+  # default overlay ships a namespaced Role that grants
+  # get/create/update/patch on Secrets in squirrel-system AND the
+  # coordination.k8s.io Lease verbs leader election needs. We can't
+  # delete the whole Role (the Lease binding is still required) and
+  # we can't delete just an entry from rules[] without index drift,
+  # so we replace the rules wholesale: keep the Lease verbs, drop
+  # the Secret verbs. A compromise of the operator's ServiceAccount
+  # in cert-manager mode therefore never gains Secret write access.
+  - target:
+      group: rbac.authorization.k8s.io
+      version: v1
+      kind: Role
+      name: squirrel-manager
+      namespace: squirrel-system
+    path: role_namespaced_patch.yaml

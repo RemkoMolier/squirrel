@@ -1,0 +1,11 @@
+{
+  "name": "squirrel-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Devtime-only npm manifest carrying the markdownlint-cli2 + custom-rule pins ADR-0001 enforces. The Go operator does not ship a JS runtime; package.json and package-lock.json exist solely so `npm ci` reproduces an identical node_modules tree on every dev/CI environment and the title-case-style + max-one-sentence-per-line custom rules resolve. See the markdownlint target in the Makefile and the matching CI job for the entry points.",
+  "devDependencies": {
+    "markdownlint-cli2": "^0.22.0",
+    "markdownlint-rule-title-case-style": "^0.4.3",
+    "markdownlint-rule-max-one-sentence-per-line": "^0.0.2"
+  }
+}

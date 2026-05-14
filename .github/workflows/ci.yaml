@@ -1,0 +1,140 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise reads .tool-versions and installs every pinned runtime
+      # (Go, Node, and - in later jobs - kubectl / kubeconform /
+      # kube-linter), keeping local dev and CI on byte-identical
+      # toolchains. The action handles its own caching.
+      - uses: jdx/mise-action@v2
+      - run: go test -race -count=1 ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      # golangci-lint is pinned in go.mod via the `tool` directive;
+      # invoking it through `go tool` keeps CI and local in lockstep.
+      - run: go tool golangci-lint run ./...
+
+  verify-manifests:
+    name: verify-manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      # Fails CI when controller-gen output diverges from what was
+      # committed (e.g. an author edited a kubebuilder marker without
+      # regenerating). Same target operators run locally as
+      # `make verify-manifests`.
+      - run: make verify-manifests
+
+  envtest:
+    name: envtest (k8s ${{ matrix.k8s }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.33 is the design floor (docs/design/v1alpha1.md).
+        # 1.36 is the latest stable envtest publishes.
+        k8s:
+          - "1.33.0"
+          - "1.34.0"
+          - "1.35.0"
+          - "1.36.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: make test-integration ENVTEST_K8S_VERSION=${{ matrix.k8s }}
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise provides the Node version pinned in .tool-versions, so the
+      # `npx markdownlint-cli2` shell-out matches the contributor flow
+      # documented in the Makefile. The custom rules
+      # (title-case-style + max-one-sentence-per-line) live in
+      # package.json devDependencies and load via Node module
+      # resolution from node_modules/, so `npm ci` is mandatory before
+      # the lint step.
+      - uses: jdx/mise-action@v2
+      - run: npm ci --no-audit --no-fund
+      - run: npx markdownlint-cli2
+
+
+  e2e-kind:
+    name: e2e-kind
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      # kind is the only e2e-specific binary not in .tool-versions
+      # (mise does not have a first-class plugin). The official
+      # helm/kind-action installs the kind binary and leaves the
+      # cluster lifecycle to hack/e2e-kind.sh so the local-dev path
+      # (which has no GitHub-Actions wrapper) and CI exercise the
+      # same orchestration.
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+      # docker is pre-installed on ubuntu-latest. `make e2e-kind`
+      # builds the image, boots kind, kind-loads the image, applies
+      # config/default, waits for the operator Deployment, and runs
+      # the e2e suite. ~3 minutes wall clock on the GitHub-hosted
+      # runners; well-cached re-runs land closer to ~2 minutes.
+      - run: make e2e-kind
+
+  manifests-static-analysis:
+    name: manifests-static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise installs every pinned tool from .tool-versions in one
+      # step: kubectl (for `kubectl kustomize`), kubeconform (schema
+      # validation), and kube-linter (best-practice + security
+      # checks). Versions match the values local devs run via
+      # `mise install`.
+      - uses: jdx/mise-action@v2
+      # `-skip CustomResourceDefinition` is required because the
+      # default kubeconform schema bundle does not include a schema
+      # for the CustomResourceDefinition kind itself. Validating
+      # CRDs is the apiserver's job at apply time; kubeconform here
+      # is for the rendered Pod / Service / Deployment / MWC shape.
+      - name: render and validate default overlay
+        run: |
+          kubectl kustomize config/default | \
+            kubeconform -strict -kubernetes-version 1.33.0 \
+              -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+      - name: render and validate cert-manager overlay
+        run: |
+          kubectl kustomize config/overlays/cert-manager | \
+            kubeconform -strict -kubernetes-version 1.33.0 \
+              -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+      - name: kube-linter default overlay
+        run: |
+          kubectl kustomize config/default | kube-linter lint --config .kube-linter.yaml -
+      - name: kube-linter cert-manager overlay
+        run: |
+          kubectl kustomize config/overlays/cert-manager | kube-linter lint --config .kube-linter.yaml -

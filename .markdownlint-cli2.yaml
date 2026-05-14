@@ -1,0 +1,87 @@
+# squirrel - markdownlint configuration
+#
+# See ADR-0001 (docs/decision/0001-use-markdown-for-documentation.md).
+# We use semantic line breaks (one sentence per line) for diff-friendly review,
+# so MD013 (line length) must not be enforced. The YAML frontmatter on ADRs
+# precedes the H1, so MD041 (first line H1) is also disabled.
+#
+# Two custom rules layer on top of the built-ins:
+#
+#   - max-one-sentence-per-line enforces ADR-0001's semantic
+#     line-breaks rule directly (rather than relying on contributors
+#     to honour it by convention).
+#   - title-case-style enforces the docs project's convention of
+#     sentence-case headings, with a small allow-list for proper
+#     nouns we use throughout (Kubernetes, ADR, OCI, ...).
+#
+# Custom rules are loaded via Node module resolution; package.json
+# pins them as devDependencies. Run `npm ci` before
+# `npx markdownlint-cli2` locally; the CI workflow does the same.
+
+config:
+  default: true
+  MD013: false             # line length - semantic line breaks instead
+  MD041: false             # first line H1 - YAML frontmatter precedes the heading
+  MD024:
+    siblings_only: true    # duplicate headings allowed under different parents
+  title-case-style:
+    case: sentence
+    # Proper nouns and project-specific tokens that must keep their
+    # native capitalisation regardless of position in the heading.
+    # Add entries here rather than disabling the rule for individual
+    # headings - the rule's strength is that a forgotten capital on
+    # a new word now surfaces as a CI failure.
+    ignore:
+      - ADR
+      - ADRs
+      - MADR
+      - KEP
+      - KEP-shaped
+      - Markdown
+      - JSON
+      - YAML
+      - RBAC
+      - OCI
+      - TLS
+      - mTLS
+      - CA
+      - Kubernetes
+      - Kyverno
+      - Gatekeeper
+      - kustomize
+      - Components
+      - cert-manager
+      - golangci-lint
+      - staticcheck
+      - envtest
+      - kubeconform
+      - kube-linter
+      - Docker
+      - Hub
+      - JavaScript
+      - TypeScript
+      - ReStructuredText
+      - reStructuredText
+      - Gherkin
+      - squirrel
+      - Squirrel
+      - v1
+      - v1alpha1
+      - v1beta1
+      - docker.io
+      - Pod
+      - Webhook
+      - go
+      - vet
+  max-one-sentence-per-line: true
+
+customRules:
+  - "markdownlint-rule-title-case-style"
+  - "markdownlint-rule-max-one-sentence-per-line"
+
+globs:
+  - "**/*.md"
+
+ignores:
+  - "node_modules/**"
+  - ".git/**"

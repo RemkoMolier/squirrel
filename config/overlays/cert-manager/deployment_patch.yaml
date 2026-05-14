@@ -1,0 +1,52 @@
+# Deployment patch (strategic merge) for cert-manager mode:
+#
+#   - Tell the operator to use the cert-manager CertSource (passive
+#     verifier; no Secret writes, no MWC patches).
+#   - Replace the webhook-certs emptyDir with a Secret-projected
+#     volume cert-manager populates and rotates.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squirrel-manager
+  namespace: squirrel-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --leader-elect=true
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            - --webhook-port=9443
+            - --cert-source=cert-manager
+          # cert-manager owns the Secret in this mode; the operator is
+          # a passive verifier (CertManagerSource.Localize only reads
+          # the mounted PEM files - see internal/certs/certmanager.go).
+          # Pinning readOnly: true is defence in depth so a future code
+          # path that accidentally writes to CertDir fails loudly
+          # instead of silently corrupting cert-manager's state.
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+      volumes:
+        # The Secret name matches the Certificate's secretName in
+        # certificate.yaml. cert-manager keeps tls.crt / tls.key
+        # current in this Secret; the projected volume gives the
+        # webhook server those files at the path the manager's
+        # --cert-dir flag defaults to.
+        #
+        # defaultMode 0440 (owner+group read) is the smallest mode
+        # the non-root manager (UID 65532, GID 65532) can use:
+        # projected Secret files are owned by root, but Kubernetes
+        # chgrps them to the pod's fsGroup, so a group-readable
+        # bit is required. 0400 (the YAML-1.2-octal-cosmetic
+        # default the kustomize examples sometimes show) would
+        # leave the key unreadable to the manager and the webhook
+        # server would fail handshake on its first request.
+        - name: webhook-certs
+          $patch: replace
+          secret:
+            secretName: squirrel-webhook-tls
+            defaultMode: 0440

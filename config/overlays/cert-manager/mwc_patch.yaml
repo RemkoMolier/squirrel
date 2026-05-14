@@ -1,0 +1,9 @@
+# JSON Patch (RFC 6902) layered on top of the default overlay's MWC
+# patch. cert-manager-controller watches every MWC carrying this
+# annotation and rewrites webhook[].clientConfig.caBundle whenever
+# the named Certificate's CA changes - so the operator does not
+# patch the bundle itself in cert-manager mode.
+- op: add
+  path: /metadata/annotations
+  value:
+    cert-manager.io/inject-ca-from: squirrel-system/squirrel-webhook-serving-cert
