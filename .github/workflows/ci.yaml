@@ -32,6 +32,36 @@ jobs:
       # invoking it through `go tool` keeps CI and local in lockstep.
       - run: go tool golangci-lint run ./...
 
+  verify-manifests:
+    name: verify-manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      # Fails CI when controller-gen output diverges from what was
+      # committed (e.g. an author edited a kubebuilder marker without
+      # regenerating). Same target operators run locally as
+      # `make verify-manifests`.
+      - run: make verify-manifests
+
+  envtest:
+    name: envtest (k8s ${{ matrix.k8s }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.33 is the design floor (docs/design/v1alpha1.md).
+        # 1.36 is the latest stable envtest publishes.
+        k8s:
+          - "1.33.0"
+          - "1.34.0"
+          - "1.35.0"
+          - "1.36.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: make test-integration ENVTEST_K8S_VERSION=${{ matrix.k8s }}
+
   markdownlint:
     name: markdownlint
     runs-on: ubuntu-latest

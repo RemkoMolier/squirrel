@@ -45,6 +45,22 @@ build:
 build-all:
 	$(GO) build ./...
 
+# envtest binaries used by the integration tests. The version is
+# the K8s minor exposed via KUBEBUILDER_ASSETS; CI exercises a
+# matrix (1.33 floor through latest stable) by overriding
+# ENVTEST_K8S_VERSION on the make invocation.
+ENVTEST_K8S_VERSION ?= 1.36.0
+
+.PHONY: envtest
+envtest:
+	@echo "fetching envtest assets for k8s $(ENVTEST_K8S_VERSION)"
+	@$(GO) tool setup-envtest use $(ENVTEST_K8S_VERSION) -p path
+
+.PHONY: test-integration
+test-integration: envtest manifests
+	KUBEBUILDER_ASSETS="$$($(GO) tool setup-envtest use $(ENVTEST_K8S_VERSION) -p path)" \
+	  $(GO) test -tags=integration -count=1 -race ./internal/manager/...
+
 .PHONY: tidy
 tidy:
 	$(GO) mod tidy
