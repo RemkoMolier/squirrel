@@ -147,3 +147,25 @@ markdownlint:
 	npm ci --no-audit --no-fund
 	npx markdownlint-cli2
 
+# docker-build produces the manager image consumed by the kind-based
+# e2e flow. The default tag matches the image: reference in
+# config/manager/deployment.yaml so the rolled-out Deployment finds
+# the just-built binary without any kustomize image override. CI uses
+# the default and `kind load`s the image directly without a push;
+# devs can point at their own registry via $IMG.
+IMG ?= ghcr.io/remkomolier/squirrel:dev
+.PHONY: docker-build
+docker-build:
+	docker build -t $(IMG) .
+
+# e2e-kind is the end-to-end CI target: boot a kind cluster, load
+# the just-built manager image, apply config/default, wait for the
+# operator Deployment to be Ready, then run the Go specs under the
+# `e2e` build tag. hack/e2e-kind.sh handles the orchestration so the
+# local-dev and CI flows hit the same code path.
+#
+# Set KEEP_CLUSTER=1 to skip cluster teardown for triage.
+.PHONY: e2e-kind
+e2e-kind: docker-build
+	./hack/e2e-kind.sh
+
