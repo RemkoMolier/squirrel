@@ -1,0 +1,22 @@
+# JSON Patch (RFC 6902) that replaces the entire rules array on the
+# namespaced Role with the Lease-only ruleset. cert-manager owns the
+# webhook Secret and writes tls.crt / tls.key into it on every
+# rotation, so the operator never exercises the Secret verbs the
+# default overlay (self-signed mode) needs. The leader-election Lease
+# is still in the operator's namespace; controller-runtime needs
+# create/update/patch/delete plus the read verbs to manage it.
+- op: replace
+  path: /rules
+  value:
+    - apiGroups:
+        - coordination.k8s.io
+      resources:
+        - leases
+      verbs:
+        - get
+        - list
+        - watch
+        - create
+        - update
+        - patch
+        - delete

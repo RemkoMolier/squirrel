@@ -1,0 +1,42 @@
+# Self-signed Issuer used to bootstrap the webhook serving cert.
+# Real deployments typically replace this with a reference to a
+# cluster-wide ClusterIssuer that chains to the organisation's CA;
+# the operator does not care which Issuer drives the Certificate as
+# long as the resulting Secret carries tls.crt + tls.key.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: squirrel-selfsigned-issuer
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: cert-manager
+spec:
+  selfSigned: {}
+---
+# cert-manager-issued Certificate. cert-manager rotates the Secret
+# in place ahead of expiry; the operator's CertManagerSource is a
+# passive verifier of the on-disk material it sees through the
+# Secret-projected volume mount on the Deployment.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: squirrel-webhook-serving-cert
+  namespace: squirrel-system
+  labels:
+    app.kubernetes.io/name: squirrel
+    app.kubernetes.io/component: cert-manager
+spec:
+  # Match the SANs the SelfSignedSource also derives, so swapping
+  # cert sources at install time does not change what the apiserver
+  # validates against.
+  dnsNames:
+    - squirrel-webhook.squirrel-system.svc
+    - squirrel-webhook.squirrel-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: squirrel-selfsigned-issuer
+  # Secret name is also the default WebhookSecretName the operator's
+  # flag points at. Override --webhook-secret-name if a deployment
+  # uses a different Certificate.spec.secretName.
+  secretName: squirrel-webhook-tls
