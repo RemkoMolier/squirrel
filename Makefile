@@ -36,6 +36,13 @@ fmt:
 
 .PHONY: build
 build:
+	$(GO) build -o bin/squirrel-manager ./cmd/manager
+
+# build-all keeps the old `go build ./...` behaviour as a compile
+# check across every package, kept under a separate target so CI can
+# call it without producing a binary it does not need.
+.PHONY: build-all
+build-all:
 	$(GO) build ./...
 
 .PHONY: tidy
