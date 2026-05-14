@@ -61,6 +61,37 @@ test-integration: envtest manifests
 	KUBEBUILDER_ASSETS="$$($(GO) tool setup-envtest use $(ENVTEST_K8S_VERSION) -p path)" \
 	  $(GO) test -tags=integration -count=1 -race ./internal/manager/...
 
+# Static analysis of the rendered manifests. Pulls in two external
+# binaries:
+#
+#   - kubeconform: schema validation against the K8s OpenAPI for
+#     ENVTEST_K8S_VERSION (Makefile default 1.36; CI's
+#     manifests-static-analysis job pins 1.33 explicitly to validate
+#     against the documented design floor).
+#   - kube-linter: best-practice and security checks per
+#     .kube-linter.yaml.
+#
+# Both expect the binaries to be on $PATH. The CI workflow handles
+# install; locally, see the install instructions in their READMEs.
+.PHONY: manifests-static-analysis
+manifests-static-analysis:
+	@command -v kubeconform >/dev/null 2>&1 || { echo "kubeconform not on PATH; install from https://github.com/yannh/kubeconform"; exit 1; }
+	@command -v kube-linter >/dev/null 2>&1 || { echo "kube-linter not on PATH; install from https://docs.kubelinter.io/"; exit 1; }
+	# -skip CustomResourceDefinition: the default schema bundle has
+	# no CRD-kind schema; the apiserver validates CRDs at apply.
+	kubectl kustomize config/default | \
+	  kubeconform -strict -kubernetes-version $(ENVTEST_K8S_VERSION) \
+	    -skip CustomResourceDefinition \
+	    -schema-location default \
+	    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+	kubectl kustomize config/overlays/cert-manager | \
+	  kubeconform -strict -kubernetes-version $(ENVTEST_K8S_VERSION) \
+	    -skip CustomResourceDefinition \
+	    -schema-location default \
+	    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+	kubectl kustomize config/default | kube-linter lint --config .kube-linter.yaml -
+	kubectl kustomize config/overlays/cert-manager | kube-linter lint --config .kube-linter.yaml -
+
 .PHONY: tidy
 tidy:
 	$(GO) mod tidy

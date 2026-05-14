@@ -77,3 +77,41 @@ jobs:
       - uses: jdx/mise-action@v2
       - run: npm ci --no-audit --no-fund
       - run: npx markdownlint-cli2
+
+
+  manifests-static-analysis:
+    name: manifests-static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # mise installs every pinned tool from .tool-versions in one
+      # step: kubectl (for `kubectl kustomize`), kubeconform (schema
+      # validation), and kube-linter (best-practice + security
+      # checks). Versions match the values local devs run via
+      # `mise install`.
+      - uses: jdx/mise-action@v2
+      # `-skip CustomResourceDefinition` is required because the
+      # default kubeconform schema bundle does not include a schema
+      # for the CustomResourceDefinition kind itself. Validating
+      # CRDs is the apiserver's job at apply time; kubeconform here
+      # is for the rendered Pod / Service / Deployment / MWC shape.
+      - name: render and validate default overlay
+        run: |
+          kubectl kustomize config/default | \
+            kubeconform -strict -kubernetes-version 1.33.0 \
+              -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+      - name: render and validate cert-manager overlay
+        run: |
+          kubectl kustomize config/overlays/cert-manager | \
+            kubeconform -strict -kubernetes-version 1.33.0 \
+              -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+      - name: kube-linter default overlay
+        run: |
+          kubectl kustomize config/default | kube-linter lint --config .kube-linter.yaml -
+      - name: kube-linter cert-manager overlay
+        run: |
+          kubectl kustomize config/overlays/cert-manager | kube-linter lint --config .kube-linter.yaml -

@@ -1,0 +1,56 @@
+# kube-linter configuration. Starts from the built-in default set
+# (a curated security + reliability ruleset) and excludes the few
+# checks that don't apply to a single-binary admission-webhook
+# operator. The defaults catch the common Pod-spec mistakes the
+# manifests would otherwise be vulnerable to (missing probes,
+# unset resource requests, privileged escalation, latest tag, etc.).
+
+checks:
+  addAllBuiltIn: true
+  exclude:
+    # `latest` tag check fires on the development :dev tag the
+    # deployment uses as a placeholder. The image is pinned to a
+    # release tag/digest at deploy time via `kustomize edit set
+    # image` (documented in INSTALL.md), so this check is noise
+    # against the in-repo Deployment but signal at deploy time -
+    # operators can re-enable it for their overlay if they want
+    # to fail-closed on `:latest`.
+    - "latest-tag"
+    # required-label-owner / required-annotation-email are
+    # organisation-specific. squirrel does not enforce a specific
+    # label/annotation owner; downstream consumers can add them.
+    - "required-label-owner"
+    - "required-annotation-email"
+    # minimum-three-replicas is too prescriptive for a webhook
+    # operator. Two replicas + PodDisruptionBudget already keeps
+    # availability through routine maintenance.
+    - "minimum-three-replicas"
+    # access-to-secrets fires on the namespaced Role for the
+    # webhook-cert Secret. The whole point of squirrel's
+    # SelfSignedSource is to read/write that Secret; the verbs
+    # are scoped to a single named Secret in a single namespace.
+    - "access-to-secrets"
+    # dnsconfig-options expects an explicit Pod.dnsConfig. The
+    # operator uses cluster DNS unchanged; there is no per-pod
+    # DNS tuning to apply.
+    - "dnsconfig-options"
+    # no-anti-affinity fires on the 2-replica Deployment, but the
+    # manifest already uses topologySpreadConstraints with
+    # kubernetes.io/hostname / whenUnsatisfiable=DoNotSchedule -
+    # a strictly stronger guarantee than soft podAntiAffinity.
+    - "no-anti-affinity"
+    # no-node-affinity expects the Deployment to pin to specific
+    # nodes. The operator is fine running on any worker; node
+    # selection is a cluster-operator concern (downstream overlay
+    # can patch nodeSelector/affinity if a target needs it).
+    - "no-node-affinity"
+    # non-isolated-pod expects a matching NetworkPolicy. Shipping
+    # one from this root would conflict with whatever NetworkPolicy
+    # stack the cluster runs (Calico, Cilium, etc.); we leave it to
+    # the deploying operator.
+    - "non-isolated-pod"
+    # restart-policy is a Pod-level field whose default is Always
+    # for Deployment-managed pods. kube-linter flags the unset
+    # field on the template rather than honouring the controller
+    # default; setting it explicitly would be redundant.
+    - "restart-policy"
