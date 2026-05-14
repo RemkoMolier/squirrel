@@ -1,0 +1,39 @@
+# JSON Patch (RFC 6902) applied to the controller-gen-emitted
+# MutatingWebhookConfiguration. Four ops, in order:
+#
+#   1. Rename the resource to the design's `squirrel-image-rewrite`
+#      (the operator's --mwc-name flag defaults to this; the
+#      SelfSignedSource and the apiserver both target it by name).
+#   2. Point clientConfig.service at the real Service (squirrel-webhook
+#      in squirrel-system) instead of the kubebuilder placeholder
+#      (webhook-service in `system`).
+#   3. Re-point clientConfig.service.namespace likewise.
+#   4. Add the design's namespaceSelector: only namespaces with the
+#      squirrel.molier.dev/enabled=true label are eligible, and the
+#      Kubernetes-reserved namespaces plus squirrel-system are
+#      excluded by name. The MWC selector is the primary safety
+#      gate; PodMutator.Handle's reserved-namespace + opt-in check
+#      is the in-handler complement when this overlay is missing or
+#      misapplied.
+- op: replace
+  path: /metadata/name
+  value: squirrel-image-rewrite
+- op: replace
+  path: /webhooks/0/clientConfig/service/name
+  value: squirrel-webhook
+- op: replace
+  path: /webhooks/0/clientConfig/service/namespace
+  value: squirrel-system
+- op: add
+  path: /webhooks/0/namespaceSelector
+  value:
+    matchLabels:
+      squirrel.molier.dev/enabled: "true"
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - squirrel-system
