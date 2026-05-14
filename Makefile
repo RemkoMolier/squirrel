@@ -87,6 +87,26 @@ manifests:
 		output:rbac:artifacts:config=config/rbac \
 		output:webhook:artifacts:config=config/webhook
 
+# verify-manifests runs manifests and fails when the working tree
+# diverges from what was committed - the CI equivalent of "did the
+# author forget to regenerate after touching a marker?".
+.PHONY: verify-manifests
+verify-manifests: manifests
+	@if ! git diff --exit-code config/crd config/rbac config/webhook; then \
+	  echo "Generated manifests are stale; run 'make manifests' and commit the result." >&2; \
+	  exit 1; \
+	fi
+
+# verify is the core Go + manifest pre-PR check: lint,
+# manifests-up-to-date, every unit test green. CI also runs
+# envtest, markdownlint, and manifest-static-analysis on top -
+# operators who want byte-identical CI semantics locally should
+# pair `make verify` with `make test-integration` and
+# `make markdownlint` (manifest static analysis additionally
+# needs kubectl / kubeconform / kube-linter from .tool-versions).
+.PHONY: verify
+verify: lint verify-manifests test-race
+
 # markdownlint is a Node.js tool. The custom rules (title-case-style
 # and max-one-sentence-per-line) live in package.json devDependencies;
 # `npm ci` installs them into node_modules so the markdownlint config's
